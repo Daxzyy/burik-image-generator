@@ -8,6 +8,24 @@ import { fetchFile, toBlobURL } from '@ffmpeg/util';
 
 type Tab = 'image' | 'video';
 
+// Module-level singleton — survives re-renders, only loads once per page
+const ffmpegSingleton = new FFmpeg();
+let ffmpegLoadPromise: Promise<void> | null = null;
+
+async function getFFmpeg(): Promise<FFmpeg> {
+  if (!ffmpegLoadPromise) {
+    ffmpegLoadPromise = (async () => {
+      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+      await ffmpegSingleton.load({
+        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+      });
+    })();
+  }
+  await ffmpegLoadPromise;
+  return ffmpegSingleton;
+}
+
 export default function BurikApp() {
   const [tab, setTab] = useState<Tab>('image');
 
@@ -35,7 +53,15 @@ export default function BurikApp() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imageFileRef = useRef<HTMLInputElement | null>(null);
   const videoFileRef = useRef<HTMLInputElement | null>(null);
-  const ffmpegRef = useRef<FFmpeg | null>(null);
+
+  // Load FFmpeg once on mount (background, non-blocking)
+  useEffect(() => {
+    setFfmpegLoading(true);
+    getFFmpeg()
+      .then(() => { setFfmpegLoaded(true); setFfmpegError(''); })
+      .catch((e) => { console.error('FFmpeg load failed', e); setFfmpegError('Gagal load FFmpeg. Coba refresh halaman.'); })
+      .finally(() => setFfmpegLoading(false));
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -43,27 +69,6 @@ export default function BurikApp() {
       if (processedVideoURL) URL.revokeObjectURL(processedVideoURL);
     };
   }, [selectedVideoURL, processedVideoURL]);
-
-  const loadFFmpeg = async () => {
-    if (ffmpegLoaded || ffmpegLoading) return;
-    setFfmpegLoading(true);
-    setFfmpegError('');
-    try {
-      const ffmpeg = new FFmpeg();
-      ffmpegRef.current = ffmpeg;
-      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
-      await ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-      });
-      setFfmpegLoaded(true);
-    } catch (e) {
-      console.error('FFmpeg load failed', e);
-      setFfmpegError('Gagal load FFmpeg. Coba refresh halaman.');
-    } finally {
-      setFfmpegLoading(false);
-    }
-  };
 
   // ===================== IMAGE LOGIC =====================
 
@@ -171,7 +176,6 @@ export default function BurikApp() {
     setVideoHasProcessed(false);
     setVideoProgress('');
     setVideoProgressPct(0);
-    loadFFmpeg();
   };
 
   const handleVideoDrag = (e: React.DragEvent) => {
@@ -193,11 +197,10 @@ export default function BurikApp() {
     setVideoHasProcessed(false);
     setVideoProgress('');
     setVideoProgressPct(0);
-    loadFFmpeg();
   };
 
   const processVideo = async () => {
-    if (!selectedVideo || !ffmpegRef.current || !ffmpegLoaded) return;
+    if (!selectedVideo || !ffmpegLoaded) return;
 
     setIsVideoProcessing(true);
     setVideoProgressPct(0);
@@ -205,7 +208,7 @@ export default function BurikApp() {
     setProcessedVideoURL(null);
 
     try {
-      const ffmpeg = ffmpegRef.current;
+      const ffmpeg = await getFFmpeg();
 
       // Listen to progress events
       ffmpeg.on('progress', ({ progress }) => {
@@ -336,7 +339,7 @@ export default function BurikApp() {
                 Image
               </button>
               <button
-                onClick={() => { setTab('video'); loadFFmpeg(); }}
+                onClick={() => setTab('video')}
                 className={`flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold transition-all ${
                   tab === 'video' ? 'bg-accent text-white' : 'text-[#86868B] hover:text-white'
                 }`}
