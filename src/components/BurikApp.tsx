@@ -155,7 +155,7 @@ export default function BurikApp() {
           >
             <h2
               className="text-3xl font-bold tracking-tight mb-2 uppercase text-white"
-              style={{ fontFamily: "'DotGothic16', monospace }}
+              style={{ fontFamily: "'DotGothic16', monospace" }}
             >
               Burik Image Generator
             </h2>
