@@ -11,6 +11,7 @@ type Tab = 'image' | 'video';
 export default function BurikApp() {
   const [tab, setTab] = useState<Tab>('image');
 
+  // --- Image State ---
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [pixelatedImage, setPixelatedImage] = useState<string | null>(null);
   const [imagePixelLevel, setImagePixelLevel] = useState<number>(50);
@@ -18,16 +19,18 @@ export default function BurikApp() {
   const [imageDragActive, setImageDragActive] = useState<boolean>(false);
   const [imageHasProcessed, setImageHasProcessed] = useState<boolean>(false);
 
+  // --- Video State ---
   const [selectedVideo, setSelectedVideo] = useState<File | null>(null);
   const [selectedVideoURL, setSelectedVideoURL] = useState<string | null>(null);
   const [processedVideoURL, setProcessedVideoURL] = useState<string | null>(null);
-  const [videoPixelLevel, setVideoPixelLevel] = useState<number>(50);
   const [isVideoProcessing, setIsVideoProcessing] = useState<boolean>(false);
   const [videoDragActive, setVideoDragActive] = useState<boolean>(false);
   const [videoHasProcessed, setVideoHasProcessed] = useState<boolean>(false);
   const [videoProgress, setVideoProgress] = useState<string>('');
+  const [videoProgressPct, setVideoProgressPct] = useState<number>(0);
   const [ffmpegLoaded, setFfmpegLoaded] = useState<boolean>(false);
   const [ffmpegLoading, setFfmpegLoading] = useState<boolean>(false);
+  const [ffmpegError, setFfmpegError] = useState<string>('');
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const imageFileRef = useRef<HTMLInputElement | null>(null);
@@ -44,6 +47,7 @@ export default function BurikApp() {
   const loadFFmpeg = async () => {
     if (ffmpegLoaded || ffmpegLoading) return;
     setFfmpegLoading(true);
+    setFfmpegError('');
     try {
       const ffmpeg = new FFmpeg();
       ffmpegRef.current = ffmpeg;
@@ -55,10 +59,13 @@ export default function BurikApp() {
       setFfmpegLoaded(true);
     } catch (e) {
       console.error('FFmpeg load failed', e);
+      setFfmpegError('Gagal load FFmpeg. Coba refresh halaman.');
     } finally {
       setFfmpegLoading(false);
     }
   };
+
+  // ===================== IMAGE LOGIC =====================
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -152,6 +159,8 @@ export default function BurikApp() {
     setImageHasProcessed(false);
   };
 
+  // ===================== VIDEO LOGIC =====================
+
   const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -161,6 +170,7 @@ export default function BurikApp() {
     setProcessedVideoURL(null);
     setVideoHasProcessed(false);
     setVideoProgress('');
+    setVideoProgressPct(0);
     loadFFmpeg();
   };
 
@@ -182,59 +192,65 @@ export default function BurikApp() {
     setProcessedVideoURL(null);
     setVideoHasProcessed(false);
     setVideoProgress('');
+    setVideoProgressPct(0);
     loadFFmpeg();
   };
 
   const processVideo = async () => {
     if (!selectedVideo || !ffmpegRef.current || !ffmpegLoaded) return;
+
     setIsVideoProcessing(true);
-    setVideoProgress('Menulis file...');
+    setVideoProgressPct(0);
+    setVideoProgress('Menulis file input...');
     setProcessedVideoURL(null);
 
     try {
       const ffmpeg = ffmpegRef.current;
-      const effectiveLevel = 30 + (videoPixelLevel / 100) * 70;
-      const scaleW = Math.round(128 + (1 - (effectiveLevel - 30) / 70) * (640 - 128));
-      const fps = Math.round(5 + (1 - (effectiveLevel - 30) / 70) * 25);
-      const videoBitrate = Math.round(50 + (1 - (effectiveLevel - 30) / 70) * 2000);
-      const audioSampleRate = Math.round(4000 + (1 - (effectiveLevel - 30) / 70) * 40000);
-      const audioBitrate = Math.round(8 + (1 - (effectiveLevel - 30) / 70) * 120);
-      const lowpassFreq = Math.round(300 + (1 - (effectiveLevel - 30) / 70) * 15000);
 
+      // Listen to progress events
       ffmpeg.on('progress', ({ progress }) => {
-        setVideoProgress(`Memproses... ${Math.round(progress * 100)}%`);
+        const pct = Math.min(Math.round(progress * 100), 99);
+        setVideoProgressPct(pct);
+        setVideoProgress(`Memproses... ${pct}%`);
       });
 
-      const ext = selectedVideo.name.slice(selectedVideo.name.lastIndexOf('.'));
+      // Determine input extension
+      const ext = selectedVideo.name.slice(selectedVideo.name.lastIndexOf('.')) || '.mp4';
       const inputName = `input${ext}`;
-      await ffmpeg.writeFile(inputName, await fetchFile(selectedVideo));
-      setVideoProgress('Menjalankan FFmpeg...');
 
+      // Write input file to FFmpeg FS
+      setVideoProgressPct(5);
+      setVideoProgress('Menulis file input...');
+      await ffmpeg.writeFile(inputName, await fetchFile(selectedVideo));
+
+      // Run the exact same command used in terminal:
+      // ffmpeg -i input.mp4 -vf scale=426:240 output.mp4
+      setVideoProgressPct(10);
+      setVideoProgress('Menjalankan FFmpeg...');
       await ffmpeg.exec([
         '-i', inputName,
-        '-vf', `scale=${scaleW}:-2:flags=neighbor,fps=${fps}`,
-        '-vcodec', 'libx264',
-        '-b:v', `${videoBitrate}k`,
-        '-acodec', 'aac',
-        '-ar', `${audioSampleRate}`,
-        '-b:a', `${audioBitrate}k`,
-        '-af', `lowpass=f=${lowpassFreq}`,
-        '-movflags', '+faststart',
+        '-vf', 'scale=426:240',
         'output.mp4',
       ]);
 
+      // Read output
+      setVideoProgressPct(99);
       setVideoProgress('Menyiapkan hasil...');
       const data = await ffmpeg.readFile('output.mp4');
       const blob = new Blob([data], { type: 'video/mp4' });
       if (processedVideoURL) URL.revokeObjectURL(processedVideoURL);
       setProcessedVideoURL(URL.createObjectURL(blob));
       setVideoHasProcessed(true);
+      setVideoProgressPct(100);
       setVideoProgress('');
-      await ffmpeg.deleteFile(inputName);
-      await ffmpeg.deleteFile('output.mp4');
+
+      // Cleanup FFmpeg FS
+      await ffmpeg.deleteFile(inputName).catch(() => {});
+      await ffmpeg.deleteFile('output.mp4').catch(() => {});
     } catch (e) {
       console.error(e);
-      setVideoProgress('Gagal memproses video.');
+      setVideoProgress('❌ Gagal memproses video. Coba lagi.');
+      setVideoProgressPct(0);
     } finally {
       setIsVideoProcessing(false);
     }
@@ -243,7 +259,7 @@ export default function BurikApp() {
   const handleVideoDownload = () => {
     if (!processedVideoURL) return;
     const link = document.createElement('a');
-    link.download = `burik-video-${videoPixelLevel}.mp4`;
+    link.download = `burik-video.mp4`;
     link.href = processedVideoURL;
     link.click();
   };
@@ -254,10 +270,12 @@ export default function BurikApp() {
     setSelectedVideo(null);
     setSelectedVideoURL(null);
     setProcessedVideoURL(null);
-    setVideoPixelLevel(50);
     setVideoHasProcessed(false);
     setVideoProgress('');
+    setVideoProgressPct(0);
   };
+
+  // ===================== RENDER =====================
 
   return (
     <div className="min-h-screen text-[#F5F5F7] flex flex-col font-sans selection:bg-accent/30">
@@ -306,6 +324,7 @@ export default function BurikApp() {
             animate={{ opacity: 1, scale: 1 }}
             className="bg-card backdrop-blur-3xl border border-border p-6 rounded-[24px] shadow-2xl space-y-6"
           >
+            {/* Tab Switcher */}
             <div className="flex gap-1 p-1 bg-white/5 rounded-full w-fit mx-auto">
               <button
                 onClick={() => setTab('image')}
@@ -328,6 +347,7 @@ export default function BurikApp() {
             </div>
 
             <AnimatePresence mode="wait">
+              {/* ============ IMAGE TAB ============ */}
               {tab === 'image' && (
                 <motion.div
                   key="image"
@@ -415,6 +435,7 @@ export default function BurikApp() {
                 </motion.div>
               )}
 
+              {/* ============ VIDEO TAB ============ */}
               {tab === 'video' && (
                 <motion.div
                   key="video"
@@ -425,6 +446,7 @@ export default function BurikApp() {
                   className="space-y-5"
                 >
                   {!selectedVideoURL ? (
+                    /* Upload Area */
                     <div
                       className={`border-2 border-dashed rounded-2xl p-14 flex flex-col items-center gap-3 cursor-pointer transition-all ${
                         videoDragActive ? 'border-accent bg-accent/5' : 'border-border hover:border-[#444] bg-white/[0.02]'
@@ -446,40 +468,49 @@ export default function BurikApp() {
                           Loading FFmpeg...
                         </span>
                       )}
+                      {ffmpegError && (
+                        <span className="text-[10px] text-red-400 font-bold">{ffmpegError}</span>
+                      )}
                       <input ref={videoFileRef} type="file" className="hidden" accept="video/*" onChange={handleVideoUpload} />
                     </div>
                   ) : (
+                    /* Video Editor Area - simplified, no slider */
                     <div className="space-y-5">
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-center px-1">
-                          <span className="text-[#86868B] text-xs font-medium">Kehancuran</span>
-                          <span className="text-accent font-bold text-xs">{videoPixelLevel}%</span>
+
+                      {/* Info banner */}
+                      <div className="bg-accent/10 border border-accent/20 rounded-2xl px-4 py-3 flex items-center gap-3">
+                        <Film size={16} className="text-accent shrink-0" />
+                        <div>
+                          <p className="text-xs font-semibold text-white">{selectedVideo?.name}</p>
+                          <p className="text-[10px] text-[#86868B] mt-0.5">Output: 426×240 · format MP4</p>
                         </div>
-                        <input
-                          type="range" min="1" max="100" step="1"
-                          value={videoPixelLevel}
-                          onChange={(e) => setVideoPixelLevel(parseInt(e.target.value))}
-                          className="cursor-pointer"
-                        />
                       </div>
+
+                      {/* Before / After Preview */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <span className="text-[10px] font-black uppercase tracking-widest text-[#444] px-1">Before</span>
-                          <div className="aspect-square bg-black/40 rounded-2xl overflow-hidden border border-white/5 flex items-center justify-center">
-                            <video src={selectedVideoURL} controls className="max-w-full max-h-full" />
+                          <div className="aspect-video bg-black/40 rounded-2xl overflow-hidden border border-white/5 flex items-center justify-center">
+                            <video src={selectedVideoURL} controls className="max-w-full max-h-full w-full" />
                           </div>
                         </div>
                         <div className="space-y-2">
                           <span className="text-[10px] font-black uppercase tracking-widest text-accent px-1">After</span>
-                          <div className="aspect-square bg-black/40 rounded-2xl overflow-hidden border border-white/5 flex items-center justify-center">
+                          <div className="aspect-video bg-black/40 rounded-2xl overflow-hidden border border-white/5 flex items-center justify-center">
                             {processedVideoURL ? (
-                              <motion.video initial={{ opacity: 0 }} animate={{ opacity: 1 }} src={processedVideoURL} controls className="max-w-full max-h-full" />
+                              <motion.video
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                src={processedVideoURL}
+                                controls
+                                className="max-w-full max-h-full w-full"
+                              />
                             ) : (
-                              <div className="flex flex-col items-center gap-2">
+                              <div className="flex flex-col items-center gap-2 p-4 text-center">
                                 {isVideoProcessing ? (
                                   <>
                                     <RefreshCw className="w-8 h-8 text-accent animate-spin" />
-                                    <div className="text-[10px] text-accent/70 font-bold uppercase tracking-tighter text-center px-4">{videoProgress}</div>
+                                    <div className="text-[10px] text-accent/70 font-bold uppercase tracking-tighter">{videoProgress}</div>
                                   </>
                                 ) : (
                                   <>
@@ -492,6 +523,31 @@ export default function BurikApp() {
                           </div>
                         </div>
                       </div>
+
+                      {/* Progress Bar — only shown while processing */}
+                      {isVideoProcessing && (
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center px-1">
+                            <span className="text-[10px] text-[#86868B] font-medium">{videoProgress}</span>
+                            <span className="text-[10px] text-accent font-bold">{videoProgressPct}%</span>
+                          </div>
+                          <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden">
+                            <motion.div
+                              className="h-full bg-accent rounded-full"
+                              initial={{ width: '0%' }}
+                              animate={{ width: `${videoProgressPct}%` }}
+                              transition={{ ease: 'easeOut', duration: 0.3 }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Error message */}
+                      {!isVideoProcessing && videoProgress.startsWith('❌') && (
+                        <p className="text-xs text-red-400 text-center font-medium">{videoProgress}</p>
+                      )}
+
+                      {/* Action Buttons */}
                       <div className="flex flex-col gap-3">
                         <button
                           onClick={processVideo}
@@ -499,13 +555,22 @@ export default function BurikApp() {
                           className="w-full bg-accent hover:bg-accent-hover disabled:bg-white/10 disabled:text-[#86868B] text-white py-3.5 rounded-full font-semibold transition-all active:scale-[0.98] flex items-center justify-center gap-2"
                         >
                           {isVideoProcessing ? (
-                            <><RefreshCw className="animate-spin" size={18} />{videoProgress || 'Memproses...'}</>
+                            <><RefreshCw className="animate-spin" size={18} />Memproses...</>
                           ) : ffmpegLoading ? (
                             <><RefreshCw className="animate-spin" size={18} />Loading FFmpeg...</>
-                          ) : videoHasProcessed ? 'Proses Ulang' : 'Proses Video'}
+                          ) : videoHasProcessed ? (
+                            'Proses Ulang'
+                          ) : (
+                            'Burik-in Video!'
+                          )}
                         </button>
                         <div className="flex gap-2">
-                          <button onClick={resetVideo} className="flex-1 bg-white/5 hover:bg-white/10 text-sm py-3 rounded-full font-medium transition-all">Reset</button>
+                          <button
+                            onClick={resetVideo}
+                            className="flex-1 bg-white/5 hover:bg-white/10 text-sm py-3 rounded-full font-medium transition-all"
+                          >
+                            Reset
+                          </button>
                           <button
                             onClick={handleVideoDownload}
                             disabled={!processedVideoURL}
