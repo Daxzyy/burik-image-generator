@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
-const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://burik-image-generator.vercel.app";
+const BASE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://burik.givy.eu.cc";
 
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),
