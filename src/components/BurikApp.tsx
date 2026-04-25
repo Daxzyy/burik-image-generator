@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useCallback } from 'react';
 import { Upload, Download, RefreshCw, Image as ImageIcon } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 
 export default function BurikApp() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -10,6 +10,7 @@ export default function BurikApp() {
   const [pixelLevel, setPixelLevel] = useState<number>(50);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [dragActive, setDragActive] = useState<boolean>(false);
+  const [hasProcessed, setHasProcessed] = useState<boolean>(false);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -21,6 +22,7 @@ export default function BurikApp() {
       reader.onload = (event) => {
         setSelectedImage(event.target?.result as string);
         setPixelatedImage(null);
+        setHasProcessed(false);
       };
       reader.readAsDataURL(file);
     }
@@ -46,6 +48,7 @@ export default function BurikApp() {
       reader.onload = (event) => {
         setSelectedImage(event.target?.result as string);
         setPixelatedImage(null);
+        setHasProcessed(false);
       };
       reader.readAsDataURL(file);
     }
@@ -64,7 +67,6 @@ export default function BurikApp() {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
-        // "WhatsApp Burik" formula: map 1-100 → internal 30-100
         const effectiveLevel = 30 + (pixelLevel / 100) * 70;
         const minRes = 40;
         const maxRes = 400;
@@ -74,7 +76,6 @@ export default function BurikApp() {
         const w = img.width * scale;
         const h = img.height * scale;
 
-        // Pass 1: Downsample
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = w;
         tempCanvas.height = h;
@@ -82,11 +83,9 @@ export default function BurikApp() {
         if (!tctx) return;
         tctx.drawImage(img, 0, 0, w, h);
 
-        // Pass 2: JPEG artifacts
         const quality = 1 - (effectiveLevel / 105);
         const compressedData = tempCanvas.toDataURL('image/jpeg', quality);
 
-        // Pass 3: Upscale
         const finalImg = new Image();
         finalImg.src = compressedData;
         finalImg.onload = () => {
@@ -99,6 +98,7 @@ export default function BurikApp() {
           ctx.filter = 'none';
           setPixelatedImage(canvas.toDataURL('image/png'));
           setIsProcessing(false);
+          setHasProcessed(true);
         };
       };
     }, 500);
@@ -116,11 +116,11 @@ export default function BurikApp() {
     setSelectedImage(null);
     setPixelatedImage(null);
     setPixelLevel(50);
+    setHasProcessed(false);
   };
 
   return (
     <div className="min-h-screen text-[#F5F5F7] flex flex-col font-sans selection:bg-accent/30">
-      {/* Navbar */}
       <nav className="h-20 flex items-center justify-between px-6 md:px-12 z-50">
         <div className="flex items-center gap-2 group cursor-default">
           <svg width="32" height="32" viewBox="0 0 40 40" className="drop-shadow-[0_0_8px_rgba(232,160,32,0.5)]">
@@ -146,8 +146,7 @@ export default function BurikApp() {
       </nav>
 
       <main className="flex-1 flex flex-col items-center justify-center p-6 pb-20">
-        <div className="w-full max-w-[420px] space-y-6">
-          {/* Header */}
+        <div className="w-full max-w-[860px] space-y-6">
           <motion.div
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -169,7 +168,7 @@ export default function BurikApp() {
           >
             {!selectedImage ? (
               <div
-                className={`border-2 border-dashed rounded-2xl p-14 flex flex-col items-center gap-4 cursor-pointer transition-all ${
+                className={`border-2 border-dashed rounded-2xl p-14 flex flex-col items-center gap-3 cursor-pointer transition-all ${
                   dragActive
                     ? 'border-accent bg-accent/5'
                     : 'border-border hover:border-[#444] bg-white/[0.02]'
@@ -184,6 +183,7 @@ export default function BurikApp() {
                   <Upload className={`w-8 h-8 ${dragActive ? 'text-accent' : 'text-[#86868B]'}`} />
                 </div>
                 <span className="text-sm font-medium text-[#86868B]">Click or drag file here</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#444]">PNG · JPG · WEBP</span>
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -193,25 +193,34 @@ export default function BurikApp() {
                 />
               </div>
             ) : (
-              <div className="space-y-6">
-                {/* Image Previews */}
-                <div className="space-y-4">
+              <div className="space-y-5">
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center px-1">
+                    <span className="text-[#86868B] text-xs font-medium">Kehancuran</span>
+                    <span className="text-accent font-bold text-xs">{pixelLevel}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="100"
+                    step="1"
+                    value={pixelLevel}
+                    onChange={(e) => setPixelLevel(parseInt(e.target.value))}
+                    className="cursor-pointer"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <div className="flex justify-between items-center px-2">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-[#444]">Source</span>
-                      <span className="text-[10px] font-medium text-[#86868B]">Original Qual</span>
-                    </div>
-                    <div className="aspect-video bg-black/40 rounded-2xl overflow-hidden border border-white/5 flex items-center justify-center">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-[#444] px-1">Before</span>
+                    <div className="aspect-square bg-black/40 rounded-2xl overflow-hidden border border-white/5 flex items-center justify-center">
                       <img src={selectedImage} alt="Original" className="max-w-full max-h-full object-contain" />
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <div className="flex justify-between items-center px-2">
-                      <span className="text-[10px] font-black uppercase tracking-widest text-accent">Output</span>
-                      <span className="text-[10px] font-medium text-accent/60">Burik Applied</span>
-                    </div>
-                    <div className="aspect-video bg-black/40 rounded-2xl overflow-hidden border border-white/5 flex items-center justify-center relative">
+                    <span className="text-[10px] font-black uppercase tracking-widest text-accent px-1">After</span>
+                    <div className="aspect-square bg-black/40 rounded-2xl overflow-hidden border border-white/5 flex items-center justify-center relative">
                       {pixelatedImage ? (
                         <motion.img
                           initial={{ opacity: 0 }}
@@ -232,23 +241,6 @@ export default function BurikApp() {
                   </div>
                 </div>
 
-                {/* Controls */}
-                <div className="space-y-4 pt-2">
-                  <div className="flex justify-between items-center text-xs font-medium px-1">
-                    <span className="text-[#86868B]">Kehancuran</span>
-                    <span className="text-accent font-bold">{pixelLevel}%</span>
-                  </div>
-                  <input
-                    type="range"
-                    min="1"
-                    max="100"
-                    step="1"
-                    value={pixelLevel}
-                    onChange={(e) => setPixelLevel(parseInt(e.target.value))}
-                    className="cursor-pointer"
-                  />
-                </div>
-
                 <div className="flex flex-col gap-3">
                   <button
                     onClick={processImage}
@@ -257,6 +249,8 @@ export default function BurikApp() {
                   >
                     {isProcessing ? (
                       <RefreshCw className="animate-spin" size={18} />
+                    ) : hasProcessed ? (
+                      "Proses Ulang"
                     ) : (
                       "Proses Gambar"
                     )}
