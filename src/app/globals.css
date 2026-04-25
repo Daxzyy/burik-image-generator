@@ -1,9 +1,9 @@
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400..700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DotGothic16&display=swap');
 
 @theme {
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-pixel: "Pixelify Sans", cursive;
+  --font-pixel: "DotGothic16", monospace;
   --color-background: #0a0a0a;
   --color-card: rgba(20, 18, 14, 0.75);
   --color-accent: #E8A020;
