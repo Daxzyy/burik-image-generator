@@ -1,4 +1,8 @@
-import BurikApp from "@/src/components/BurikApp";
+import dynamic from "next/dynamic";
+
+const BurikApp = dynamic(() => import("@/src/components/BurikApp"), {
+  ssr: false,
+});
 
 export default function Home() {
   return <BurikApp />;
